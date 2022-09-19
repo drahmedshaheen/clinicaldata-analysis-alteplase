@@ -1,0 +1,410 @@
+---
+title: "Alteplase in Acute Stroke"
+author: "Ahmed Shaheen"
+date: '2022-07-10'
+output: html_document
+---
+
+```{r}
+library(readxl)
+library(janitor)
+library(tidyverse)
+```
+
+#Importing data
+
+```{r}
+data1 <- read_excel("~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/THROMBECTOMY_New.xlsx") %>% clean_names() %>% 
+  mutate_if(is.character, ~as.factor(as.character(.)))
+
+```
+
+#Preparing data
+
+```{r}
+data1$no_of_trials <- as.factor(data1$no_of_trials)
+data1$location <- factor(data1$location, 
+                         levels= c("basilar","basilar+VERT","carotid","MCA","MCA+CAR","t-carotid"),
+                         labels = c("BASILAR","OTHERS","CAROTID","MCA","OTHERS","OTHERS"))
+
+
+
+data1$tici_binary <- as.character(data1$tici)
+data1$tici_binary   = replace(data1$tici_binary  , data1$tici_binary   == "2A", "Failure of reperfusion")
+data1$tici_binary   = replace(data1$tici_binary  , data1$tici_binary   == "2B", "Successful reperfusion")
+data1$tici_binary   = replace(data1$tici_binary  , data1$tici_binary   == "3" , "Successful reperfusion")
+data1$tici_binary  <- as.factor(data1$tici_binary )
+```
+
+# Propensity Score Matching
+
+```{r}
+library(MatchIt)
+library(tableone)
+library(knitr)
+library(mice)
+library(VIM)
+
+aggr_plot <- aggr(data1, col=c('navyblue','red'), numbers=TRUE,
+                  sortVars=TRUE, labels=names(data), cex.axis=.7, 
+                  gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+```
+
+#Matching the samples
+
+```{r}
+set.seed(1234)
+
+match.it <- matchit(rtpa ~ age + se_x + htn + lipid + atrial_fibrilation 
+                           + time_from_onset_to_proderure   
+                           + location + no_of_trials 
+                          , data = data1, method="nearest", ratio=1)
+a <- summary(match.it)
+kable(a$nn, digits = 2, align = 'c', 
+      caption = 'Table 2: Sample sizes')
+
+
+plot(match.it, type = 'jitter', interactive = FALSE)
+
+df.match <- match.data(match.it)[1:ncol(data1)]
+pacman::p_load(tableone)
+```
+
+#test for imbalance
+
+```{r}
+vars = c('age','se_x','htn','lipid','atrial_fibrilation' 
+        ,'time_from_onset_to_proderure'   
+        ,'location','no_of_trials' )
+
+tabMatched <- CreateTableOne(vars = vars, strata = "rtpa", data = df.match, test = FALSE)
+
+print(tabMatched, smd = TRUE)
+
+addmargins(table(ExtractSmd(tabMatched) < 0.1))
+```
+
+#Comparison of outcomes before and after matching
+
+```{r}
+#Comparison of matched samples
+table2 <- CreateTableOne(vars = c("tici","tici_binary","nihss","mrs_90_0","mrs_90_3_6","ich","s_ich","death"), 
+                         data = df.match, 
+                         strata = 'rtpa')
+table2 <- print(table2, printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table2[,1:3],  align = 'c', 
+      caption = 'Table 2: Comparison of matched samples ')
+
+#Comparison of unmatched samples
+
+table1 <- CreateTableOne(vars = c("tici","tici_binary","nihss","mrs_90_0","mrs_90_3_6","ich","s_ich","death"), 
+                         data = data1, 
+                         strata = 'rtpa')
+table1 <- print(table1, printToggle = FALSE, 
+                noSpaces = TRUE)
+kable(table1[,1:3], align = 'c', 
+      caption = 'Table 1: Comparison of unmatched samples')
+
+write.csv(table1, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/Comparison of unmatched samples.csv")
+write.csv(table2, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/Comparison of matched samples.csv")
+
+variables = c(names(data1))
+#Descriptive 
+tabledesc <- CreateTableOne(vars = variables , 
+                         data = data1)
+tabledesc <- print(tabledesc,
+                printToggle = FALSE, 
+                noSpaces = TRUE)
+
+write.csv(tabledesc, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/descriptive table .csv")
+```
+
+#Multible comparisons
+
+```{r}
+tableich <- CreateTableOne(vars = variables , strata = "ich" ,
+                            data = data1)
+tableich <- print(tableich, printToggle = FALSE, 
+                   noSpaces = TRUE)
+write.csv(tableich, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/ICH table .csv")
+
+#########################
+
+tablesich <- CreateTableOne(vars = variables , strata = "s_ich" ,
+                           data = data1)
+tablesich <- print(tablesich, printToggle = FALSE, 
+                  noSpaces = TRUE)
+write.csv(tablesich, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/SICH table .csv")
+
+#################################
+tablesatrial_fibrilation <- CreateTableOne(vars = variables , strata = "atrial_fibrilation" ,
+                            data = data1)
+tablesatrial_fibrilation <- print(tablesatrial_fibrilation, printToggle = FALSE, 
+                   noSpaces = TRUE)
+write.csv(tablesatrial_fibrilation, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/tablesatrial_fibrilation table .csv")
+
+
+#############################################
+tablelocation <- CreateTableOne(vars = variables , strata = "location" ,
+                                           data = data1)
+tablelocation <- print(tablelocation, printToggle = FALSE, 
+                                  noSpaces = TRUE)
+write.csv(tablelocation, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/location table .csv")
+
+##############################################
+tableendovascular_treatment <- CreateTableOne(vars = variables , strata = "endovascular_treatment" ,
+                                data = data1)
+tableendovascular_treatment <- print(tableendovascular_treatment, printToggle = FALSE, 
+                       noSpaces = TRUE)
+write.csv(tableendovascular_treatment, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/endovascular_treatment table .csv")
+
+##############################################
+tableno_of_trials <- CreateTableOne(vars = variables , strata = "no_of_trials" ,
+                                              data = data1)
+tableno_of_trials <- print(tableno_of_trials, printToggle = FALSE, 
+                                     noSpaces = TRUE)
+write.csv(tableno_of_trials, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/no_of_trials table .csv")
+
+##############################################
+tablertpa <- CreateTableOne(vars = variables , strata = "rtpa" ,
+                                    data = data1)
+tablertpa <- print(tablertpa, printToggle = FALSE, 
+                           noSpaces = TRUE)
+write.csv(tablertpa, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/rtpa table .csv")
+
+##############################################
+tablese_x <- CreateTableOne(vars = variables , strata = "se_x" ,
+                            data = data1)
+tablese_x <- print(tablese_x, printToggle = FALSE, 
+                   noSpaces = TRUE)
+write.csv(tablese_x, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/sex table .csv")
+
+##############################################
+tablehtn <- CreateTableOne(vars = variables , strata = "htn" ,
+                            data = data1)
+tablehtn <- print(tablehtn, printToggle = FALSE, 
+                   noSpaces = TRUE)
+write.csv(tablehtn, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/htn table .csv")
+
+##############################################
+tablediabetes_mellitus <- CreateTableOne(vars = variables , strata = "diabetes_mellitus" ,
+                           data = data1)
+tablediabetes_mellitus <- print(tablediabetes_mellitus, printToggle = FALSE, 
+                  noSpaces = TRUE)
+write.csv(tablediabetes_mellitus, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/diabetes_mellitus table .csv")
+##############################################
+tablelipid <- CreateTableOne(vars = variables , strata = "lipid" ,
+                                         data = data1)
+tablelipid <- print(tablelipid, printToggle = FALSE, 
+                                noSpaces = TRUE)
+write.csv(tablelipid, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/lipid table .csv")
+##############################################
+tablesmoking <- CreateTableOne(vars = variables , strata = "smoking" ,
+                             data = data1)
+tablesmoking <- print(tablesmoking, printToggle = FALSE, 
+                    noSpaces = TRUE)
+write.csv(tablesmoking, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/smoking table .csv")
+
+##############################################
+data1$time = as.numeric(data1$time_from_symptoms_to_admission)
+data1$time = replace(data1$time, data1$time > 3.0, "More than 3H")
+data1$time = replace(data1$time, data1$time <= 3.0, "Less than or equal to 3H")
+
+tabletime <- CreateTableOne(vars = variables , strata = "time" ,
+                               data = data1)
+tabletime <- print(tabletime, printToggle = FALSE, 
+                      noSpaces = TRUE)
+write.csv(tabletime, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/time table .csv")
+
+```
+
+```{r}
+data1$httn = as.character(data1$htn)
+data1$httn = replace(data1$httn, data1$httn == "NO", "No HTN")
+data1$httn = replace(data1$httn, data1$httn == "YES", "HTN")
+
+tablertpa_hpt <- CreateTableOne(vars = variables , strata = c("httn","rtpa") ,
+                                    data = data1)
+tablertpa_hpt <- print(tablertpa_hpt, printToggle = FALSE, 
+                           noSpaces = TRUE)
+tablertpa_hpt
+write.csv(tablertpa_hpt, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/rtpa_hpt .csv")
+
+```
+
+```{r}
+tablertpa_endo <- CreateTableOne(vars = variables , strata = c("endovascular_treatment","rtpa") ,
+                                    data = data1)
+tablertpa_endo <- print(tablertpa_endo, printToggle = FALSE, 
+                           noSpaces = TRUE)
+tablertpa_endo
+write.csv(tablertpa_endo, file = "~/Library/CloudStorage/OneDrive-AlexandriaUniversity/Acute Stroke_Data/rtpa_endo .csv")
+
+```
+
+#goodness of fit for location
+
+```{r}
+
+library(EMT)
+
+observed    = c(7, 1, 13, 24, 4, 1)
+theoretical = c(.17,.16,.17,.17,.17, .16)
+
+Test = chisq.test(x = observed,
+                  p = theoretical)
+
+Test
+Test$expected
+#effect size for goodness of fit k=6 (effect size is large)
+library(rcompanion)
+
+cramerVFit(x = observed,
+           p = theoretical)
+
+##Bar plot for location 
+observed    = c(7, 1, 13, 24, 1, 4)
+theoretical = c(.165,.165,.17,.17,.165, .165)
+
+Observed.prop    = observed / sum(observed)
+Theoretical.prop = theoretical
+
+Observed.prop    = round(Observed.prop, 3)
+Theoretical.prop = round(Theoretical.prop, 3)
+
+XT = rbind(Theoretical.prop, Observed.prop)
+
+colnames(XT) = c( "BASILAR","BASILAR+VERT","CAROTID"  
+                  ,"MCA","MCA+CAR","T-CAROTID" )
+
+XT
+
+barplot(XT,
+        beside = T,
+        xlab   = "Location",
+        col    = c("cornflowerblue","blue"))
+legend("topright", legend=c("Theoretical", "Observed"),
+       col=c("cornflowerblue","blue"), fill= c("cornflowerblue","blue"), cex=0.8)
+
+```
+
+#goodness of fit for END with and without
+
+```{r}
+observedd    = c(15, 35)
+theoreticall = c(0.5,0.5)
+
+Testt = chisq.test(x = observedd,
+                  p = theoreticall)
+Testt
+Testt$expected
+#effect size for goodness of fit 
+cramerVFit(x = observedd,
+           p = theoreticall)
+
+```
+
+#Multi variate logistic
+
+```{r}
+data1$tici <- factor(data1$tici, levels = c("2A","2B", "3"), ordered = TRUE)
+
+library(Publish)
+#tici
+fit.tici = glm(tici ~  time_from_onset_to_proderure+ location + no_of_trials 
+                            + endovascular_treatment +  rtpa 
+                            , data = data1, family = binomial )
+
+summary(fit.tici)
+publish(fit.tici)
+
+#nihss
+levels(data1$nihss)
+data1$nihss = factor(data1$nihss, levels=c("SAME","DECREASED"), ordered = TRUE)
+fit.nihss = glm(nihss ~ age + se_x + htn + diabetes_mellitus + lipid +smoking
+                + atrial_fibrilation 
+                + time_from_onset_to_proderure+ location + no_of_trials 
+                + endovascular_treatment +  rtpa 
+                , data = data1, family = binomial )
+
+summary(fit.nihss)
+publish(fit.nihss)
+
+#mrs_90_3_6
+fit.mrs_90_3_6 = glm(mrs_90_3_6 ~ age + se_x + htn + diabetes_mellitus + lipid +smoking
+                     + atrial_fibrilation 
+                     + time_from_onset_to_proderure+ location + no_of_trials 
+                     + endovascular_treatment +  rtpa 
+                , data = data1, family = binomial )
+
+summary(fit.mrs_90_3_6)
+publish(fit.mrs_90_3_6)
+
+#mrs_90_0
+fit.mrs_90_0 = glm(mrs_90_0 ~age + se_x + htn + diabetes_mellitus + lipid +smoking
+                   + atrial_fibrilation 
+                   + time_from_onset_to_proderure+ location + no_of_trials 
+                   + endovascular_treatment +  rtpa 
+                   , data = data1, family = binomial )
+
+summary(fit.mrs_90_0)
+publish(fit.mrs_90_0)
+
+#ich age, sex, hypertension, atrial fibrillation,
+ #and time from onset to procedure
+fit.ich = glm(ich ~ age + rtpa + se_x + htn + lipid + atrial_fibrilation 
+                   + time_from_onset_to_proderure+ location + no_of_trials 
+                   , data = data1, family = binomial )
+
+summary(fit.ich)
+publish(fit.ich)
+
+#s_ich
+fit.sich = glm(s_ich ~ age + rtpa + se_x + htn  + atrial_fibrilation 
+              + time_from_onset_to_proderure 
+              , data = data1, family = binomial )
+
+summary(fit.sich)
+publish(fit.sich)
+#death
+fit.death = glm(death ~ age + rtpa + se_x + htn + lipid + atrial_fibrilation 
+               + time_from_onset_to_proderure+ location + no_of_trials 
+               , data = data1, family = binomial )
+
+summary(fit.death)
+publish(fit.death)
+```
+
+#Univariate logistic
+
+```{r}
+fitt.ich = glm(ich ~ rtpa
+                   , data = data1, family = binomial )
+summary(fitt.ich)
+publish(fitt.ich)
+
+fitt.sich= glm(ich ~ rtpa
+              , data = data1, family = binomial )
+
+summary(fitt.sich)
+publish(fitt.sich)
+```
+
+#AVOVA for models
+
+```{r}
+fit.sich = glm(s_ich ~ age + rtpa + se_x + htn  + atrial_fibrilation 
+                       + time_from_onset_to_proderure + location 
+                       , data = data1, family = binomial )
+fit.sich.no.rtpa = glm(s_ich ~ age + se_x + htn  + atrial_fibrilation 
+               + time_from_onset_to_proderure 
+               , data = data1, family = binomial )
+
+summary(fit.sich)
+publish(fit.sich)
+
+publish(anova(fit.sich.no.rtpa , fit.sich , test = 'Chisq'))
+
+```
